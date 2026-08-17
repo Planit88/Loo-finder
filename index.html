@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Loo Finder Ireland</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sign:#0B4EA2;        /* restroom-signage blue */
+    --sign-deep:#083A79;
+    --ink:#16222E;
+    --paper:#F6F8FA;
+    --mine:#0E8A5F;        /* my pins: green */
+    --paid:#C97A00;
+    --line:#D8E0E8;
+    --star:#F2B01E;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{font-family:'DM Sans',system-ui,sans-serif;color:var(--ink);overflow:hidden}
+  #map{position:fixed;inset:0;background:var(--paper)}
+
+  /* ── Signage strip header ── */
+  .strip{
+    position:fixed;top:0;left:0;right:0;z-index:1000;
+    background:var(--sign);color:#fff;
+    padding:10px 14px 10px;
+    display:flex;flex-direction:column;gap:8px;
+    box-shadow:0 2px 10px rgba(8,58,121,.35);
+  }
+  .strip-top{display:flex;align-items:center;gap:10px}
+  .picto{
+    width:34px;height:34px;border-radius:8px;background:#fff;color:var(--sign);
+    display:grid;place-items:center;font-size:19px;flex:none;
+  }
+  h1{font-family:'Sora',sans-serif;font-size:17px;font-weight:700;letter-spacing:.02em;flex:1}
+  .strip-btn{
+    font:inherit;font-weight:700;font-size:13px;
+    background:rgba(255,255,255,.14);color:#fff;border:1.5px solid rgba(255,255,255,.55);
+    border-radius:999px;padding:7px 13px;cursor:pointer;
+  }
+  .strip-btn:active{background:rgba(255,255,255,.3)}
+  .strip-btn.solid{background:#fff;color:var(--sign);border-color:#fff}
+
+  .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{
+    font:inherit;font-size:12.5px;font-weight:500;white-space:nowrap;
+    background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.4);
+    border-radius:999px;padding:5px 12px;cursor:pointer;flex:none;
+  }
+  .chip.on{background:#fff;color:var(--sign);font-weight:700;border-color:#fff}
+
+  /* ── Floating controls ── */
+  .fabs{position:fixed;right:12px;bottom:24px;z-index:1000;display:flex;flex-direction:column;gap:10px}
+  .fab{
+    width:52px;height:52px;border-radius:16px;border:none;cursor:pointer;
+    font-size:22px;display:grid;place-items:center;
+    background:#fff;color:var(--sign);box-shadow:0 4px 14px rgba(22,34,46,.25);
+  }
+  .fab.add{background:var(--mine);color:#fff;font-size:28px}
+  .fab.add.arming{background:var(--ink)}
+  .fab:focus-visible,.strip-btn:focus-visible,.chip:focus-visible{outline:3px solid var(--star);outline-offset:2px}
+
+  /* ── Status toast ── */
+  .toast{
+    position:fixed;left:50%;transform:translateX(-50%);z-index:1200;
+    background:var(--ink);color:#fff;font-size:13px;font-weight:500;
+    padding:9px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.3);
+    opacity:0;pointer-events:none;transition:opacity .25s, bottom .25s;bottom:84px;
+  }
+  .toast.show{opacity:1;bottom:96px}
+
+  /* ── Add form: bottom sheet ── */
+  .sheet-veil{position:fixed;inset:0;background:rgba(22,34,46,.45);z-index:1300;display:none}
+  .sheet-veil.open{display:block}
+  .sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:1400;
+    background:#fff;border-radius:20px 20px 0 0;
+    padding:18px 18px calc(18px + env(safe-area-inset-bottom));
+    transform:translateY(105%);transition:transform .28s cubic-bezier(.3,.9,.3,1);
+    max-height:82vh;overflow-y:auto;
+  }
+  .sheet.open{transform:translateY(0)}
+  @media (prefers-reduced-motion:reduce){.sheet{transition:none}.toast{transition:none}}
+  .sheet h2{font-family:'Sora',sans-serif;font-size:17px;margin-bottom:2px}
+  .sheet .sub{font-size:12.5px;color:#5A6B7B;margin-bottom:14px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#5A6B7B;margin-bottom:6px}
+  .field input[type=text]{
+    width:100%;font:inherit;font-size:15px;padding:11px 12px;
+    border:1.5px solid var(--line);border-radius:10px;background:var(--paper);
+  }
+  .field input[type=text]:focus{outline:none;border-color:var(--sign)}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{
+    font:inherit;font-size:13.5px;font-weight:500;padding:8px 13px;cursor:pointer;
+    border:1.5px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);
+  }
+  .seg button.on{background:var(--sign);border-color:var(--sign);color:#fff;font-weight:700}
+  .stars{display:flex;gap:4px}
+  .stars button{font-size:26px;background:none;border:none;cursor:pointer;color:#CBD5DE;padding:2px}
+  .stars button.on{color:var(--star)}
+  .sheet-actions{display:flex;gap:10px;margin-top:6px}
+  .sheet-actions button{
+    flex:1;font:inherit;font-size:15px;font-weight:700;padding:13px;border-radius:12px;cursor:pointer;border:none;
+  }
+  .save{background:var(--mine);color:#fff}
+  .cancel{background:var(--paper);color:var(--ink);border:1.5px solid var(--line)!important}
+
+  /* ── Markers ── */
+  .pin{
+    width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+    font-size:15px;color:#fff;background:var(--sign);
+    border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
+  }
+  .pin.mine{background:var(--mine)}
+  .pin.paid{background:var(--paid)}
+
+  /* ── Popup ── */
+  .leaflet-popup-content-wrapper{border-radius:14px;font-family:'DM Sans',sans-serif}
+  .leaflet-popup-content{margin:14px 16px;min-width:190px}
+  .pp-name{font-family:'Sora',sans-serif;font-size:15px;font-weight:700;margin-bottom:2px}
+  .pp-src{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5A6B7B;margin-bottom:8px}
+  .pp-stars{color:var(--star);font-size:15px;letter-spacing:2px;margin-bottom:6px}
+  .pp-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+  .pp-tag{font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:999px;background:var(--paper);border:1px solid var(--line)}
+  .pp-tag.yes{background:#E4F5EC;border-color:#B9E4CD;color:#0B6B49}
+  .pp-tag.no{background:#FBECEC;border-color:#F0C9C9;color:#A33}
+  .pp-tag.fee{background:#FDF2E0;border-color:#F0D9AE;color:#8A5400}
+  .pp-hours{font-size:12.5px;color:#3C4A58;margin-top:2px}
+  .pp-osm{
+    display:inline-block;margin-top:10px;font-size:12.5px;font-weight:700;text-decoration:none;
+    color:var(--sign);background:#E8F0FA;border:1px solid #C5D7EE;border-radius:8px;padding:6px 11px;
+  }
+  .pp-del{
+    margin-top:10px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+    color:#A33;background:#FBECEC;border:1px solid #F0C9C9;border-radius:8px;padding:6px 11px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<header class="strip">
+  <div class="strip-top">
+    <div class="picto">🚻</div>
+    <h1>Loo Finder <span style="font-weight:600;opacity:.8">Ireland</span></h1>
+    <select id="citySel" class="strip-btn" aria-label="Jump to a city" style="appearance:none;-webkit-appearance:none;padding-right:26px;background:rgba(255,255,255,.14) url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%226%22><path d=%22M0 0l5 6 5-6z%22 fill=%22white%22/></svg>') no-repeat right 10px center">
+      <option value="">Jump to…</option>
+      <option value="53.3498,-6.2603,13">Dublin</option>
+      <option value="51.8985,-8.4756,13">Cork</option>
+      <option value="53.2707,-9.0568,13">Galway</option>
+      <option value="52.6638,-8.6267,13">Limerick</option>
+      <option value="52.2593,-7.1101,13">Waterford</option>
+      <option value="54.5973,-5.9301,13">Belfast</option>
+      <option value="52.6541,-7.2448,13">Kilkenny</option>
+      <option value="52.0599,-9.5044,13">Killarney</option>
+      <option value="52.1409,-10.2640,13">Dingle</option>
+      <option value="54.2766,-8.4761,13">Sligo</option>
+      <option value="53.8008,-9.5261,13">Westport</option>
+      <option value="52.9715,-9.4260,12">Cliffs of Moher</option>
+    </select>
+    <button class="strip-btn solid" id="loadBtn">Load here</button>
+    <button class="strip-btn" id="exportBtn" aria-label="Export my pins">⬇</button>
+  </div>
+  <div class="chips" role="group" aria-label="Filters">
+    <button class="chip" data-f="free">Free only</button>
+    <button class="chip" data-f="access">♿ Accessible</button>
+    <button class="chip" data-f="baby">🚼 Baby change</button>
+    <button class="chip" data-f="mine">My pins</button>
+  </div>
+</header>
+
+<div class="fabs">
+  <button class="fab" id="locBtn" aria-label="Go to my location">📍</button>
+  <button class="fab add" id="addBtn" aria-label="Add a toilet">＋</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="sheet-veil" id="veil"></div>
+<div class="sheet" id="sheet" role="dialog" aria-label="Add toilet">
+  <h2>New toilet</h2>
+  <p class="sub">Saved on this device, in green on the map.</p>
+  <div class="field">
+    <label for="fName">Name</label>
+    <input type="text" id="fName" placeholder="e.g. Rest stop A7, campsite block…">
+  </div>
+  <div class="field">
+    <label>Cleanliness</label>
+    <div class="stars" id="fStars"></div>
+  </div>
+  <div class="field">
+    <label>Cost</label>
+    <div class="seg" id="fFee">
+      <button data-v="free">Free</button><button data-v="paid">Paid</button><button data-v="">Unknown</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>Wheelchair accessible</label>
+    <div class="seg" id="fAcc">
+      <button data-v="yes">Yes</button><button data-v="no">No</button><button data-v="">Unknown</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>Baby change</label>
+    <div class="seg" id="fBaby">
+      <button data-v="yes">Yes</button><button data-v="no">No</button><button data-v="">Unknown</button>
+    </div>
+  </div>
+  <div class="field">
+    <label for="fHours">Opening hours</label>
+    <input type="text" id="fHours" placeholder="e.g. 24/7, 8:00–20:00">
+  </div>
+  <div class="sheet-actions">
+    <button class="cancel" id="fCancel">Cancel</button>
+    <button class="save" id="fSave">Save toilet</button>
+  </div>
+</div>
+
+<script>
+const map = L.map('map', {zoomControl:false}).setView([53.42, -8.0], 7);
+map.setMaxBounds([[50.5,-12.5],[56.2,-4.0]]);
+map.on('drag', ()=>map.panInsideBounds(map.options.maxBounds,{animate:false}));
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const osmLayer  = L.layerGroup().addTo(map);
+const mineLayer = L.layerGroup().addTo(map);
+
+let osmToilets = [];   // fetched
+let myToilets  = [];   // persisted
+let filters = {free:false, access:false, baby:false, mine:false};
+let addMode = false;
+let pendingLatLng = null;
+
+/* ── helpers ── */
+const $ = s => document.querySelector(s);
+function toast(msg, ms=2200){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), ms);
+}
+function pinIcon(cls){
+  return L.divIcon({className:'', html:`<div class="pin ${cls}">🚻</div>`, iconSize:[30,30], iconAnchor:[15,15]});
+}
+function tag(label, kind){ return `<span class="pp-tag ${kind||''}">${label}</span>`; }
+function starsHtml(n){ return '★'.repeat(n) + '☆'.repeat(5-n); }
+
+function popupHtml(t){
+  let tags = '';
+  if (t.fee === 'free') tags += tag('Free','yes');
+  else if (t.fee === 'paid') tags += tag('Paid' + (t.charge ? ' · '+t.charge : ''),'fee');
+  if (t.access === 'yes') tags += tag('♿ Accessible','yes');
+  else if (t.access === 'no') tags += tag('♿ Not accessible','no');
+  if (t.baby === 'yes') tags += tag('🚼 Baby change','yes');
+  else if (t.baby === 'no') tags += tag('🚼 No baby change','no');
+  return `
+    <div class="pp-name">${t.name || 'Public toilet'}</div>
+    <div class="pp-src">${t.source === 'mine' ? 'My pin' : 'OpenStreetMap'}</div>
+    ${t.rating ? `<div class="pp-stars">${starsHtml(t.rating)}</div>` : ''}
+    <div class="pp-tags">${tags || tag('No details yet')}</div>
+    ${t.hours ? `<div class="pp-hours">🕐 ${t.hours}</div>` : ''}
+    ${t.source === 'mine'
+      ? `<button class="pp-del" onclick="deleteMine('${t.id}')">Delete pin</button>`
+      : `<a class="pp-osm" href="https://www.openstreetmap.org/edit?node=${t.osmId}" target="_blank" rel="noopener">✎ Fix on OpenStreetMap</a>`}
+  `;
+}
+
+function passesFilters(t){
+  if (filters.mine && t.source !== 'mine') return false;
+  if (filters.free && t.fee !== 'free') return false;
+  if (filters.access && t.access !== 'yes') return false;
+  if (filters.baby && t.baby !== 'yes') return false;
+  return true;
+}
+
+function render(){
+  osmLayer.clearLayers(); mineLayer.clearLayers();
+  let shown = 0;
+  for (const t of osmToilets){
+    if (!passesFilters(t)) continue;
+    shown++;
+    L.marker([t.lat, t.lng], {icon: pinIcon(t.fee==='paid'?'paid':'')})
+      .bindPopup(popupHtml(t)).addTo(osmLayer);
+  }
+  for (const t of myToilets){
+    if (!passesFilters(t)) continue;
+    shown++;
+    L.marker([t.lat, t.lng], {icon: pinIcon('mine')})
+      .bindPopup(popupHtml(t)).addTo(mineLayer);
+  }
+  return shown;
+}
+
+/* ── Overpass: load OSM toilets in view ── */
+async function loadOsm(){
+  const b = map.getBounds();
+  const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(',');
+  $('#loadBtn').textContent = 'Loading…';
+  try{
+    const q = `[out:json][timeout:20];node["amenity"="toilets"](${bbox});out body 400;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method:'POST', body:'data='+encodeURIComponent(q),
+      headers:{'Content-Type':'application/x-www-form-urlencoded'}
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    osmToilets = (data.elements||[]).map(e=>{
+      const g = e.tags||{};
+      return {
+        id:'osm'+e.id, osmId:e.id, source:'osm', lat:e.lat, lng:e.lon,
+        name: g.name || 'Public toilet',
+        fee: g.fee==='no' ? 'free' : g.fee==='yes' ? 'paid' : '',
+        charge: g.charge || '',
+        access: g.wheelchair==='yes' ? 'yes' : g.wheelchair==='no' ? 'no' : '',
+        baby: g.changing_table==='yes' ? 'yes' : g.changing_table==='no' ? 'no' : '',
+        hours: g.opening_hours || ''
+      };
+    });
+    const n = render();
+    if(osmToilets.length) toast(`${osmToilets.length} toilets found${n<osmToilets.length+myToilets.length?' (some hidden by filters)':''}`);
+    else toast('No mapped toilets here yet — add your own with ＋');
+  }catch(err){
+    toast('Couldn\u2019t reach OpenStreetMap — try again in a moment');
+  }
+  $('#loadBtn').textContent = 'Load here';
+}
+$('#loadBtn').addEventListener('click', loadOsm);
+
+/* auto-load when zoomed in enough (zoom 12+), so no button-pressing needed */
+let autoTimer=null;
+map.on('moveend', ()=>{
+  if(map.getZoom() < 12) return;
+  clearTimeout(autoTimer);
+  autoTimer=setTimeout(loadOsm, 500);
+});
+
+/* city jump */
+$('#citySel').addEventListener('change', e=>{
+  if(!e.target.value) return;
+  const [la,ln,z]=e.target.value.split(',').map(Number);
+  map.setView([la,ln],z);
+  e.target.value='';
+});
+
+/* ── Storage (browser localStorage) ── */
+async function loadMine(){
+  try{
+    const r = localStorage.getItem('my-toilets');
+    myToilets = r ? JSON.parse(r) : [];
+  }catch(e){ myToilets = []; }
+  render();
+}
+async function saveMine(){
+  try{ localStorage.setItem('my-toilets', JSON.stringify(myToilets)); }
+  catch(e){ toast('Saving failed — pin kept for this session only'); }
+}
+window.deleteMine = async function(id){
+  myToilets = myToilets.filter(t=>t.id!==id);
+  await saveMine(); render(); toast('Pin deleted');
+};
+
+/* ── Filters ── */
+document.querySelectorAll('.chip').forEach(c=>{
+  c.addEventListener('click', ()=>{
+    filters[c.dataset.f] = !filters[c.dataset.f];
+    c.classList.toggle('on', filters[c.dataset.f]);
+    render();
+  });
+});
+
+/* ── Locate ── */
+$('#locBtn').addEventListener('click', ()=>{
+  if(!navigator.geolocation){ toast('Location not available on this device'); return; }
+  toast('Finding you…');
+  navigator.geolocation.getCurrentPosition(
+    p=>{ map.setView([p.coords.latitude, p.coords.longitude], 15); },
+    ()=> toast('Location denied — pan the map instead')
+  );
+});
+
+/* ── Add flow ── */
+const sheet = $('#sheet'), veil = $('#veil');
+let form = {rating:0, fee:'', access:'', baby:''};
+
+$('#addBtn').addEventListener('click', ()=>{
+  addMode = !addMode;
+  $('#addBtn').classList.toggle('arming', addMode);
+  $('#addBtn').textContent = addMode ? '✕' : '＋';
+  if(addMode) toast('Tap the map where the toilet is', 4000);
+});
+
+map.on('click', e=>{
+  if(!addMode) return;
+  pendingLatLng = e.latlng;
+  openSheet();
+});
+
+function openSheet(){
+  form = {rating:0, fee:'', access:'', baby:''};
+  $('#fName').value=''; $('#fHours').value='';
+  drawStars();
+  document.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.seg').forEach(s=>{
+    const blank = s.querySelector('button[data-v=""]'); if(blank) blank.classList.add('on');
+  });
+  sheet.classList.add('open'); veil.classList.add('open');
+}
+function closeSheet(){
+  sheet.classList.remove('open'); veil.classList.remove('open');
+  addMode=false; $('#addBtn').classList.remove('arming'); $('#addBtn').textContent='＋';
+}
+veil.addEventListener('click', closeSheet);
+$('#fCancel').addEventListener('click', closeSheet);
+
+/* stars */
+function drawStars(){
+  const box = $('#fStars'); box.innerHTML='';
+  for(let i=1;i<=5;i++){
+    const b=document.createElement('button');
+    b.type='button'; b.textContent='★'; b.setAttribute('aria-label', i+' star'+(i>1?'s':''));
+    b.classList.toggle('on', i<=form.rating);
+    b.addEventListener('click', ()=>{ form.rating = (form.rating===i?0:i); drawStars(); });
+    box.appendChild(b);
+  }
+}
+/* segmented pickers */
+[['fFee','fee'],['fAcc','access'],['fBaby','baby']].forEach(([id,key])=>{
+  document.getElementById(id).querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      form[key]=b.dataset.v;
+      b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+    });
+  });
+});
+
+$('#fSave').addEventListener('click', async ()=>{
+  if(!pendingLatLng) return;
+  const t = {
+    id:'me'+Date.now(), source:'mine',
+    lat:pendingLatLng.lat, lng:pendingLatLng.lng,
+    name: $('#fName').value.trim() || 'My toilet',
+    rating: form.rating, fee: form.fee, access: form.access, baby: form.baby,
+    hours: $('#fHours').value.trim()
+  };
+  myToilets.push(t);
+  await saveMine();
+  render(); closeSheet(); toast('Toilet saved');
+});
+
+/* ── Export my pins as GeoJSON ── */
+$('#exportBtn').addEventListener('click', ()=>{
+  if(!myToilets.length){ toast('No pins of your own yet — add one with ＋'); return; }
+  const fc = { type:'FeatureCollection', features: myToilets.map(t=>({
+    type:'Feature',
+    geometry:{ type:'Point', coordinates:[t.lng, t.lat] },
+    properties:{
+      amenity:'toilets',
+      name:t.name,
+      fee: t.fee==='free' ? 'no' : t.fee==='paid' ? 'yes' : undefined,
+      wheelchair: t.access || undefined,
+      changing_table: t.baby || undefined,
+      opening_hours: t.hours || undefined,
+      note: t.rating ? `Cleanliness ${t.rating}/5` : undefined
+    }
+  }))};
+  const blob = new Blob([JSON.stringify(fc,null,2)],{type:'application/geo+json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'my-toilets.geojson';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+  toast(`Exported ${myToilets.length} pin${myToilets.length>1?'s':''}`);
+});
+
+/* boot */
+loadMine();
+</script>
+</body>
+</html>
